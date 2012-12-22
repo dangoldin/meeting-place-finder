@@ -126,22 +126,68 @@ var get_lat_lon = function(el) {
 };
 
 var iterate = function() {
-  // Weigh the center based on the durations
-  var lat_sum = lng_sum = duration_sum = 0;
-  $('input.addr-input').each(function(){
-    var duration = parseFloat( $(this).attr('data-duration') );
-    lat_sum += parseFloat( $(this).attr('data-lat') ) * duration;
-    lng_sum += parseFloat( $(this).attr('data-lng') ) * duration;
-    duration_sum += duration;
-  });
-  var lat_avg = lat_sum/duration_sum;
-  var lng_avg = lng_sum/duration_sum;
-  console.log(lat_avg + ',' + lng_avg);
+  var lat_avg, lng_avg, deltas = [];
+  if ($('#results-table tbody tr').length <= 1) {
+    // Weigh the center based on the durations
+    var lat_sum = lng_sum = duration_sum = 0;
+    $('input.addr-input').each(function(){
+      var duration = parseFloat( $(this).attr('data-duration') );
+      lat_sum += parseFloat( $(this).attr('data-lat') ) * duration;
+      lng_sum += parseFloat( $(this).attr('data-lng') ) * duration;
+      duration_sum += duration;
+    });
+    var duration_avg = duration_sum/$('input.addr-input').length;
+    lat_avg = lat_sum/duration_sum;
+    lng_avg = lng_sum/duration_sum;
+    console.log(lat_avg + ',' + lng_avg);
+  }
+  else {
+    var lat0 = parseFloat($('#row-' + (iteration-2)).attr('data-lat'));
+    var lng0 = parseFloat($('#row-' + (iteration-2)).attr('data-lng'));
 
+    var lat1 = parseFloat($('#row-' + (iteration-1)).attr('data-lat'));
+    var lng1 = parseFloat($('#row-' + (iteration-1)).attr('data-lng'));
+
+    var lat_d = lat1 - lat0;
+    var lng_d = lng1 - lng0;
+
+    var duration_sum = 0;
+    $('input.addr-input').each(function(){
+      var duration = parseFloat( $(this).attr('data-duration') );
+      duration_sum += duration;
+    });
+    var duration_avg = duration_sum/$('input.addr-input').length;
+
+    // Adjust prior center
+    lat_avg = lat1;
+    lng_avg = lng1;
+    $('input.addr-input').each(function(){
+      var duration = $(this).attr('data-duration');
+      var duration_diff = duration - duration_avg;
+      console.log('Duration diff: ' + duration_diff);
+      if (duration_diff > 0) {
+        lat_avg -= lat_d * duration_diff/duration * 2;
+        lng_avg -= lng_d * duration_diff/duration * 2;
+      } else {
+        lat_avg += lat_d * duration_diff/duration * 2;
+        lng_avg += lng_d * duration_diff/duration * 2;
+      }
+      console.log('New lat lon: ' + lat_avg + ',' + lng_avg);
+    });
+  }
+
+  var infowindow = new google.maps.InfoWindow({
+    content: "Iteration " + iteration
+  });
+  
   var marker_ctr = new google.maps.Marker({
     position: new google.maps.LatLng(lat_avg, lng_avg),
     map: map,
-    title:"Center"
+    title: "Iteration " + iteration
+  });
+
+  google.maps.event.addListener(marker_ctr, 'click', function() {
+    infowindow.open(map,marker_ctr);
   });
 
   $('input.addr-input').each(function(){
@@ -156,15 +202,17 @@ var iterate = function() {
 
     get_directions(starting, ending, this);
 
-    pausecomp(5000);
+    pausecomp(2000);
   });
 
   // Add row to table
-  var row = '<tr><td>'+iteration+'</td>';
+  var total_duration = 0;
+  var row = '<tr id="row-'+iteration+'" data-lat="'+lat_avg+'" data-lng="'+lng_avg+'"><td>'+iteration+'</td>';
   $('input.addr-input').each(function(){
     row += '<td>' + $(this).attr('data-duration') + ' min</td>';
+    total_duration += parseInt($(this).attr('data-duration'), 10);
   });
-  row += '</tr>';
+  row += '<td>'+total_duration+' min</td></tr>';
 
   $('#results-table').append(row);
 
@@ -198,7 +246,7 @@ $(document).ready(function(){
     $('input.addr-input').each(function(){    
       header += '<th>'+$(this).val()+'</th>';
     });
-    header += '</tr>';
+    header += '<th>Total</th></tr>';
     $('#results-header').html(header);
 
     $('input.addr-input').each(function(){
