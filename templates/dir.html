@@ -1,0 +1,229 @@
+{% extends './base.html' %}
+
+{% block title %}Directions{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="row">
+    <div class="span12">
+      <h1>Directions</h1>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="span12">
+      <form id="dir-form" method="POST" class="form-horizontal">
+        <div class="control-group addr-input">
+          <div class="controls">
+            <input type="text" class="addr-input" placeholder="Address" data-lat="" data-lng="" data-duration="1" value="07030">
+          </div>
+        </div>
+
+        <div class="control-group addr-input">
+          <div class="controls">
+            <input type="text" class="addr-input" placeholder="Address" data-lat="" data-lng="" data-duration="1" value="10016">
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="controls">
+            <a id="add-address" class="btn">Add Address</a>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="controls">
+            <a id="go" class="btn btn-primary">Go</a>
+            <a id="next" class="btn btn-primary" style="display:none;">Next</a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="span6">
+      <div id="map_canvas" style="width:100%; height:500px;">
+      </div>
+    </div>
+    <div class="span6" id="results" style="display:none;">
+      <h3>Results</h3>
+      <table class="table" id="results-table">
+        <thead id="results-header">
+        </thead>
+        <tbody id="results-body">
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block bodybottom %}
+<script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAZThYjJueJCRwvFVV5u4teH4fdua8IFh8&sensor=false"></script>
+<script type="text/javascript">
+var map;
+var iteration = 0;
+
+function pausecomp(millis) {
+  var date = new Date();
+  var curDate = null;
+  do { curDate = new Date(); }
+  while(curDate-date < millis);
+}
+
+var get_directions = function(addr1, addr2, el) {
+  var date = new Date();
+  var dir_url = 'http://maps.googleapis.com/maps/api/directions/json?origin='+addr1+'&destination='+addr2+'&sensor=false&mode=transit&departure_time=' + Math.round(date.valueOf()/1000);
+
+  // modes: driving, transit, walking, bicylcling
+  // departure_time required
+
+  console.log('Dir URL: ' + dir_url)
+
+  $.ajax({
+    type: 'GET',
+    url: dir_url,
+    dataType: 'json',
+    context: el,
+    success: function(data) { 
+      console.log(data);
+
+      var time = data['routes'][0]['legs'][0]['duration']['value'];
+      console.log(time + ' seconds');
+
+      $(el).attr('data-duration', Math.round(time/60));
+    },
+    data: {},
+    async: false
+  });
+};
+
+var get_lat_lon = function(el) {
+  var addr = $(el).val();
+
+  console.log('Addr: ' + addr);
+
+  var url = 'http://maps.googleapis.com/maps/api/geocode/json?sensor=false&address=' + addr;
+
+  $.ajax({
+    type: 'GET',
+    url: url,
+    dataType: 'json',
+    context: el,
+    success: function(data) { 
+      console.log(data);
+
+      var location = data['results'][0]['geometry']['location'];
+      console.log(location);
+
+      $(el).attr('data-lat', '' + location['lat'] );
+      $(el).attr('data-lng', '' + location['lng'] );
+    },
+    data: {},
+    async: false
+  });
+};
+
+var iterate = function() {
+  // Weigh the center based on the durations
+  var lat_sum = lng_sum = duration_sum = 0;
+  $('input.addr-input').each(function(){
+    var duration = parseFloat( $(this).attr('data-duration') );
+    lat_sum += parseFloat( $(this).attr('data-lat') ) * duration;
+    lng_sum += parseFloat( $(this).attr('data-lng') ) * duration;
+    duration_sum += duration;
+  });
+  var lat_avg = lat_sum/duration_sum;
+  var lng_avg = lng_sum/duration_sum;
+  console.log(lat_avg + ',' + lng_avg);
+
+  var marker_ctr = new google.maps.Marker({
+    position: new google.maps.LatLng(lat_avg, lng_avg),
+    map: map,
+    title:"Center"
+  });
+
+  $('input.addr-input').each(function(){
+    var marker = new google.maps.Marker({
+      position: new google.maps.LatLng( parseFloat($(this).attr('data-lat')), parseFloat($(this).attr('data-lng'))),
+      map: map,
+      title: "Addr"
+    });
+
+    var starting = $(this).attr('data-lat') + ',' + $(this).attr('data-lng');
+    var ending   = lat_avg + ',' + lng_avg;
+
+    get_directions(starting, ending, this);
+
+    pausecomp(5000);
+  });
+
+  // Add row to table
+  var row = '<tr><td>'+iteration+'</td>';
+  $('input.addr-input').each(function(){
+    row += '<td>' + $(this).attr('data-duration') + ' min</td>';
+  });
+  row += '</tr>';
+
+  $('#results-table').append(row);
+
+  $('#results').show();
+
+  $('#next').show();
+
+  iteration += 1;
+};
+
+$(document).ready(function(){
+  $('#add-address').click(function(){
+    console.log('Add address!');
+
+    $('.control-group.addr-input:last').after('<div class="control-group addr-input">' +
+          '<div class="controls">' +
+            '<input type="text" class="addr-input" placeholder="Address" data-lat="" data-lng="" data-duration="1">' +
+          '</div>' +
+        '</div>' );
+  });
+
+  $('#next').click(function(){
+    iterate();
+  });
+
+  $('#go').click(function() {
+    console.log('Form!');
+
+    // Set up table
+    var header = '<tr><th>Iteration</th>';
+    $('input.addr-input').each(function(){    
+      header += '<th>'+$(this).val()+'</th>';
+    });
+    header += '</tr>';
+    $('#results-header').html(header);
+
+    $('input.addr-input').each(function(){
+      get_lat_lon( this );
+    })
+
+    var lat_sum = lng_sum = 0;
+    $('input.addr-input').each(function(){
+      lat_sum += parseFloat( $(this).attr('data-lat') );
+      lng_sum += parseFloat( $(this).attr('data-lng') );
+    });
+    var lat_avg = lat_sum/$('input.addr-input').length;
+    var lng_avg = lng_sum/$('input.addr-input').length;
+    console.log(lat_avg + ',' + lng_avg);
+
+    var mapOptions = {
+      center: new google.maps.LatLng(lat_avg, lng_avg),
+      zoom: 13,
+      mapTypeId: google.maps.MapTypeId.ROADMAP
+    };
+
+    map = new google.maps.Map(document.getElementById("map_canvas"), mapOptions);
+
+    iterate();
+  });
+});
+</script>
+{% endblock %}
