@@ -159,18 +159,28 @@ var iterate = function() {
     var duration_avg = duration_sum/$('input.addr-input').length;
 
     // Adjust prior center
-    lat_avg = lat1;
-    lng_avg = lng1;
+    // Find center that minimized total distance
+    var min_duration = Math.min.apply(null, $('#results-table tbody .total-duration').map(function(){ return parseFloat($(this).attr('data-total-duration')); }) );
+    $('#results-table tbody tr').each(function(){
+      console.log(this);
+      if ( parseFloat($(this).find('td.total-duration').attr('data-total-duration')) == min_duration ) {
+        console.log('Found row!');
+        lat_avg = parseFloat($(this).attr('data-lat'));
+        lng_avg = parseFloat($(this).attr('data-lng'));
+      }
+    });
+    // lat_avg = lat1;
+    // lng_avg = lng1;
     $('input.addr-input').each(function(){
       var duration = $(this).attr('data-duration');
       var duration_diff = duration - duration_avg;
       console.log('Duration diff: ' + duration_diff);
       if (duration_diff > 0) {
-        lat_avg -= lat_d * duration_diff/duration * 2;
-        lng_avg -= lng_d * duration_diff/duration * 2;
+        lat_avg -= lat_d * duration_diff/duration;
+        lng_avg -= lng_d * duration_diff/duration;
       } else {
-        lat_avg += lat_d * duration_diff/duration * 2;
-        lng_avg += lng_d * duration_diff/duration * 2;
+        lat_avg += lat_d * duration_diff/duration;
+        lng_avg += lng_d * duration_diff/duration;
       }
       console.log('New lat lon: ' + lat_avg + ',' + lng_avg);
     });
@@ -212,7 +222,7 @@ var iterate = function() {
     row += '<td>' + $(this).attr('data-duration') + ' min</td>';
     total_duration += parseInt($(this).attr('data-duration'), 10);
   });
-  row += '<td>'+total_duration+' min</td></tr>';
+  row += '<td class="total-duration" data-total-duration="'+total_duration+'">'+total_duration+' min</td></tr>';
 
   $('#results-table').append(row);
 
