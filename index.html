@@ -70,7 +70,7 @@
   </div>
 
   <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
-  <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAZThYjJueJCRwvFVV5u4teH4fdua8IFh8&amp;sensor=false"></script>
+  <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?libraries=places&amp;key=AIzaSyAZThYjJueJCRwvFVV5u4teH4fdua8IFh8&amp;sensor=false"></script>
 
   <script type="text/javascript" src="static/js/bootstrap.min.js"></script>
   <!-- <script type="text/javascript" src="static/js/meeting.place.finder.js"></script> -->
@@ -96,6 +96,7 @@
             '<button type="button" class="btn active" data-val="transit">Public</button>' +
             '<button type="button" class="btn" data-val="walking">Walk</button>' +
           '</div>' +
+          '<a class="btn btn-link js-del-address">&times;</a>' +
         '</div>' +
       '</div>');
 
@@ -294,9 +295,20 @@
         $(this).parents('.controls').find('.addr-input').attr('data-travel', travel);
       });
 
+      $('input.addr-input').each(function(){
+        var autocomplete = new google.maps.places.Autocomplete(this);
+      });
+
       $('#add-address').click(function(){
-        console.log('Add address!');
+        console.log('Adding address');
         $('.control-group.addr-input:last').after(addressInputTemplate());
+        var last_input = $('input.addr-input:last')[0];
+        var autocomplete = new google.maps.places.Autocomplete(last_input);
+      });
+
+      $('#dir-form').delegate('a.js-del-address','click',function(){
+        console.log('Deleting address');
+        $(this).parents('div.addr-input').remove();
       });
 
       $('#next').click(function(){
