@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Directions</title>
-<link rel="stylesheet" type="text/css" href="static/css/bootstrap.min.css">
+  <title>Meeting Place Finder</title>
+  <link rel="stylesheet" type="text/css" href="static/css/bootstrap.min.css">
+  <link rel="stylesheet" type="text/css" href="static/css/style.css">
 </head>
 
 <body>
   <div class="container">
     <div class="row">
       <div class="span12">
-        <h1>Directions</h1>
+          <h1>Meeting Place Finder</h1>
       </div>
     </div>
 
@@ -43,13 +44,8 @@
           <div class="control-group">
             <div class="controls">
               <a id="add-address" class="btn">Add Address</a>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <div class="controls">
               <a id="go" class="btn btn-primary">Go</a>
-              <a id="next" class="btn btn-primary" style="display:none;">Next</a>
+              <a id="next" class="btn btn-primary" style="display:none;">Next Iteration</a>
             </div>
           </div>
         </form>
@@ -57,11 +53,11 @@
     </div>
 
     <div class="row">
-      <div class="span6">
+      <div class="span7">
         <div id="map_canvas" style="width:100%; height:500px;">
         </div>
       </div>
-      <div class="span6" id="results" style="display:none;">
+      <div class="span5" id="results" style="display:none;">
         <h3>Results</h3>
         <table class="table" id="results-table">
           <thead id="results-header">
@@ -74,257 +70,294 @@
   </div>
 
   <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+  <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAZThYjJueJCRwvFVV5u4teH4fdua8IFh8&amp;sensor=false"></script>
+
   <script type="text/javascript" src="static/js/bootstrap.min.js"></script>
+  <!-- <script type="text/javascript" src="static/js/meeting.place.finder.js"></script> -->
+  <!-- <script type="text/javascript" src="static/js/sylvester.js"></script> -->
+  <script type="text/javascript" src="static/js/mustache.js"></script>
 
-  <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAZThYjJueJCRwvFVV5u4teH4fdua8IFh8&sensor=false"></script>
   <script type="text/javascript">
-  var map;
-  var iteration = 0;
+    // Configure mustache
+    var tableHeaderTemplate = Mustache.compile(
+      '<tr><th>Iteration</th>' +
+      '{{#addrs}}<th>{{.}}</th>{{/addrs}}' +
+      '<th>Total</th></tr>');
+    var rowTemplate = Mustache.compile(
+      '<tr><td>{{iteration}}</td>'+
+      '{{#durations}}<td>{{.}} min</td>{{/durations}}'+
+      '<td>{{total_duration}} min</td></tr>');
+    var addressInputTemplate = Mustache.compile(
+      '<div class="control-group addr-input">' +
+        '<div class="controls">' +
+          '<input type="text" class="addr-input" placeholder="Address" data-lat="" data-lng="" data-duration="1" data-travel="transit" value="10016">' +
+          '&nbsp;<div class="btn-group travel-input" data-toggle="buttons-radio">' +
+            '<button type="button" class="btn" data-val="driving">Car</button>' +
+            '<button type="button" class="btn active" data-val="transit">Public</button>' +
+            '<button type="button" class="btn" data-val="walking">Walk</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>');
 
-  // 40.744052 40.74727
-  var lat_delta = 0.0003218;
-  var lng_delta = 0.004701;
-  // -74.0270745 -73.9800645
+    var data_dim = 15;
+    var data_matrix = {};
+    var map;
+    var iteration = 0;
+    var locations = {};
+    var num_locations = 0;
+    var steps = [];
 
-  function pausecomp(millis) {
-    var date = new Date();
-    var curDate = null;
-    do { curDate = new Date(); }
-    while(curDate-date < millis);
-  }
+    // Just set these manually for now
+    var lat_delta = 0.0003218;   // 40.744052 - 40.74727
+    var lng_delta = 0.004701;    // -74.0270745 - -73.9800645
 
-  // http://www.movable-type.co.uk/scripts/latlong.html
-  var distance = function(lat1, lon1, lat2, lon2) {
-    var R = 6371; // km
-    var dLat = (lat2-lat1).toRad();
-    var dLon = (lon2-lon1).toRad();
-    var lat1 = lat1.toRad();
-    var lat2 = lat2.toRad();
-
-    var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2); 
-    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-    var d = R * c;
-
-    return d;
-  }
-
-  var get_directions = function(addr1, addr2, el) {
-    var mode = $(el).attr('data-travel');
-    var date = new Date();
-    var dir_url = 'http://maps.googleapis.com/maps/api/directions/json?origin='+addr1+'&destination='+addr2+'&sensor=false&mode='+mode+'&departure_time=' + Math.round(date.valueOf()/1000);
-
-    // departure_time is required to use transit mode so just use it all the time
-
-    console.log('Dir URL: ' + dir_url)
-
-    $.ajax({
-      type: 'GET',
-      url: dir_url,
-      dataType: 'json',
-      context: el,
-      success: function(data) { 
-        console.log(data);
-
-        var time = data['routes'][0]['legs'][0]['duration']['value'];
-        console.log(time + ' seconds');
-
-        $(el).attr('data-duration', Math.round(time/60));
-      },
-      data: {},
-      async: false
-    });
-  };
-
-  var get_lat_lon = function(el) {
-    var addr = $(el).val();
-
-    console.log('Addr: ' + addr);
-
-    var url = 'http://maps.googleapis.com/maps/api/geocode/json?sensor=false&address=' + addr;
-
-    $.ajax({
-      type: 'GET',
-      url: url,
-      dataType: 'json',
-      context: el,
-      success: function(data) { 
-        console.log(data);
-
-        var location = data['results'][0]['geometry']['location'];
-        console.log(location);
-
-        $(el).attr('data-lat', '' + location['lat'] );
-        $(el).attr('data-lng', '' + location['lng'] );
-      },
-      data: {},
-      async: false
-    });
-  };
-
-  var iterate = function() {
-    var lat_avg, lng_avg, deltas = [];
-    if ($('#results-table tbody tr').length <= 1) {
-      // Weigh the center based on the durations
-      var lat_sum = lng_sum = duration_sum = 0;
-      $('input.addr-input').each(function(){
-        var duration = parseFloat( $(this).attr('data-duration') );
-        lat_sum += parseFloat( $(this).attr('data-lat') ) * duration;
-        lng_sum += parseFloat( $(this).attr('data-lng') ) * duration;
-        duration_sum += duration;
-      });
-      var duration_avg = duration_sum/$('input.addr-input').length;
-      lat_avg = lat_sum/duration_sum;
-      lng_avg = lng_sum/duration_sum;
-      console.log(lat_avg + ',' + lng_avg);
-    }
-    else {
-      var lat0 = parseFloat($('#row-' + (iteration-2)).attr('data-lat'));
-      var lng0 = parseFloat($('#row-' + (iteration-2)).attr('data-lng'));
-
-      var lat1 = parseFloat($('#row-' + (iteration-1)).attr('data-lat'));
-      var lng1 = parseFloat($('#row-' + (iteration-1)).attr('data-lng'));
-
-      var lat_d = lat1 - lat0;
-      var lng_d = lng1 - lng0;
-
-      var duration_sum = 0;
-      $('input.addr-input').each(function(){
-        var duration = parseFloat( $(this).attr('data-duration') );
-        duration_sum += duration;
-      });
-      var duration_avg = duration_sum/$('input.addr-input').length;
-
-      // Adjust prior center
-      // Find center that minimized total distance
-      var min_duration = Math.min.apply(null, $('#results-table tbody .total-duration').map(function(){ return parseFloat($(this).attr('data-total-duration')); }) );
-      $('#results-table tbody tr').each(function(){
-        console.log(this);
-        if ( parseFloat($(this).find('td.total-duration').attr('data-total-duration')) == min_duration ) {
-          console.log('Found row!');
-          lat_avg = parseFloat($(this).attr('data-lat'));
-          lng_avg = parseFloat($(this).attr('data-lng'));
-        }
-      });
-      // lat_avg = lat1;
-      // lng_avg = lng1;
-      $('input.addr-input').each(function(){
-        var duration = $(this).attr('data-duration');
-        var duration_diff = duration - duration_avg;
-        console.log('Duration diff: ' + duration_diff);
-        if (duration_diff > 0) {
-          lat_avg -= lat_d * duration_diff/duration;
-          lng_avg -= lng_d * duration_diff/duration;
-        } else {
-          lat_avg += lat_d * duration_diff/duration;
-          lng_avg += lng_d * duration_diff/duration;
-        }
-        console.log('New lat lon: ' + lat_avg + ',' + lng_avg);
-      });
+    function pausecomp(millis) {
+      var date = new Date();
+      var curDate = null;
+      do { curDate = new Date(); }
+      while(curDate-date < millis);
     }
 
-    var infowindow = new google.maps.InfoWindow({
-      content: "Iteration " + iteration
-    });
-    
-    var marker_ctr = new google.maps.Marker({
-      position: new google.maps.LatLng(lat_avg, lng_avg),
-      map: map,
-      title: "Iteration " + iteration
-    });
+    // From http://www.movable-type.co.uk/scripts/latlong.html to deal with earth curvature
+    var distance = function(lat1, lon1, lat2, lon2) {
+      var R = 6371; // km
+      var dLat = (lat2-lat1).toRad();
+      var dLon = (lon2-lon1).toRad();
+      var lat1 = lat1.toRad();
+      var lat2 = lat2.toRad();
 
-    google.maps.event.addListener(marker_ctr, 'click', function() {
-      infowindow.open(map,marker_ctr);
-    });
+      var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2);
+      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      var d = R * c;
 
-    $('input.addr-input').each(function(){
-      var marker = new google.maps.Marker({
-        position: new google.maps.LatLng( parseFloat($(this).attr('data-lat')), parseFloat($(this).attr('data-lng'))),
+      return d;
+    }
+
+    var create_matrix = function(n) {
+      var matrix = new Array();
+      for (var i = 0; i < n; i++) {
+        var row = new Array();
+        for (var j = 0; j < n; j++) {
+          row[j] = 0;
+        }
+        matrix[i] = row;
+      }
+      return matrix;
+    }
+
+    var create_vector = function(n) {
+      var vector = new Array();
+      for (var i = 0; i < n; i++) {
+        vector[i] = 0;
+      }
+      return vector;
+    }
+
+    var init_data = function(n) {
+      data_matrix['total_duration'] = create_matrix(n);
+      data_matrix['lat'] = create_vector(n);
+      data_matrix['lng'] = create_vector(n);
+
+      // Get min/max lat and lng so we create a grid
+      var min_lat = Math.min.apply( null, $.map(locations, function(value,key) { return value.lat; }));
+      var max_lat = Math.max.apply( null, $.map(locations, function(value,key) { return value.lat; }));
+      var min_lng = Math.min.apply( null, $.map(locations, function(value,key) { return value.lng; }));
+      var max_lng = Math.max.apply( null, $.map(locations, function(value,key) { return value.lng; }));
+
+      var lat_step = (max_lat - min_lat)/(n-1);
+      var lng_step = (max_lng - min_lng)/(n-1);
+
+      console.log('Min/Max Lat: ' + min_lat + ',' + max_lat);
+      console.log('Min/Max Lng: ' + min_lng + ',' + max_lng);
+      console.log('Lat step: ' + lat_step);
+      console.log('Lng step: ' + lng_step);
+
+      for (var i = 0; i < n; i++) {
+        data_matrix['lat'][i] = min_lat + i * lat_step;
+        data_matrix['lng'][i] = min_lng + i * lng_step;
+      }
+
+      console.log('Initial data:');
+      console.log(data_matrix);
+    }
+
+    var get_directions = function(addr1, addr2, mode, callback) {
+      var date = new Date();
+      // departure_time is required to use transit mode so lets just use it all the time
+      var dir_url = 'http://maps.googleapis.com/maps/api/directions/json?origin='+addr1+'&destination='+addr2+'&sensor=false&mode='+mode+'&departure_time=' + Math.round(date.valueOf()/1000);
+      console.log('Dir URL: ' + dir_url)
+      $.ajax({
+        type: 'GET',
+        url: dir_url,
+        dataType: 'json',
+        success: callback,
+        data: {},
+        async: false
+      });
+    };
+
+    var get_lat_lon = function(addr, callback) {
+      var url = 'http://maps.googleapis.com/maps/api/geocode/json?sensor=false&address=' + addr;
+      $.ajax({
+        type: 'GET',
+        url: url,
+        dataType: 'json',
+        success: callback,
+        data: {},
+        async: false
+      });
+    };
+
+    var get_new_lat_lon = function() {
+      var step_lat = step_lng = -1;
+      if (steps.length == 0) {
+        step_lat = Math.floor(data_dim/2) + 1;
+        step_lng = Math.floor(data_dim/2) + 1;
+      } else {
+        var last_steps = steps[steps.length -1];
+        // Pick direction to walk
+        step_lat = last_steps[0] + 1;
+        step_lng = last_steps[1] + 1;
+      }
+      steps[steps.length] = [step_lat, step_lng];
+      return { lat: data_matrix['lat'][step_lat],
+               lng: data_matrix['lng'][step_lng]};
+    };
+
+    var iterate = function() {
+      var lat_lon = get_new_lat_lon();
+      lat_avg = lat_lon.lat;
+      lng_avg = lat_lon.lng;
+
+      console.log('New lat lng: ' + lat_avg + ',' + lng_avg);
+
+      var infowindow = new google.maps.InfoWindow({
+        content: "Iteration " + iteration + ' ('+lat_avg+','+lng_avg+')'
+      });
+
+      var marker_ctr = new google.maps.Marker({
+        position: new google.maps.LatLng(lat_avg, lng_avg),
         map: map,
-        title: "Addr"
+        title: "Iteration " + iteration + ' ('+lat_avg+','+lng_avg+')',
+        icon: 'http://chart.apis.google.com/chart?chst=d_map_pin_letter&chld='+iteration+'|FE6256|000000'
       });
 
-      var starting = $(this).attr('data-lat') + ',' + $(this).attr('data-lng');
-      var ending   = lat_avg + ',' + lng_avg;
-
-      get_directions(starting, ending, this);
-
-      pausecomp(4000); // Don't overload google's servers
-    });
-
-    // Add row to table
-    var total_duration = 0;
-    var row = '<tr id="row-'+iteration+'" data-lat="'+lat_avg+'" data-lng="'+lng_avg+'"><td>'+iteration+'</td>';
-    $('input.addr-input').each(function(){
-      row += '<td>' + $(this).attr('data-duration') + ' min</td>';
-      total_duration += parseInt($(this).attr('data-duration'), 10);
-    });
-    row += '<td class="total-duration" data-total-duration="'+total_duration+'">'+total_duration+' min</td></tr>';
-
-    $('#results-table').append(row);
-
-    $('#results').show();
-
-    $('#next').show();
-
-    iteration += 1;
-  };
-
-  $(document).ready(function(){
-    $('.travel-input button').click(function(){
-      var travel = $(this).attr('data-val');
-      $(this).parents('.controls').find('.addr-input').attr('data-travel', travel);
-    });
-
-    $('#add-address').click(function(){
-      console.log('Add address!');
-
-      $('.control-group.addr-input:last').after('<div class="control-group addr-input">' +
-            '<div class="controls">' +
-              '<input type="text" class="addr-input" placeholder="Address" data-lat="" data-lng="" data-duration="1">' +
-            '</div>' +
-          '</div>' );
-    });
-
-    $('#next').click(function(){
-      iterate();
-    });
-
-    $('#go').click(function() {
-      console.log('Form!');
-
-      // Set up table
-      var header = '<tr><th>Iteration</th>';
-      $('input.addr-input').each(function(){    
-        header += '<th>'+$(this).val()+'</th>';
+      google.maps.event.addListener(marker_ctr, 'click', function() {
+        infowindow.open(map,marker_ctr);
       });
-      header += '<th>Total</th></tr>';
-      $('#results-header').html(header);
 
-      $('input.addr-input').each(function(){
-        get_lat_lon( this );
-      })
+      var curr_x = steps[ steps.length-1 ][0];
+      var curr_y = steps[ steps.length-1 ][1];
 
-      var lat_sum = lng_sum = 0;
-      $('input.addr-input').each(function(){
-        lat_sum += parseFloat( $(this).attr('data-lat') );
-        lng_sum += parseFloat( $(this).attr('data-lng') );
+      var total_duration = 0;
+      var durations = []
+      $.map(locations, function(value,key) {
+        var marker = new google.maps.Marker({
+          position: new google.maps.LatLng( value.lat, value.lng ),
+          map: map,
+          title: key
+        });
+
+        var starting = value.lat + ',' + value.lng;
+        var ending   = lat_avg + ',' + lng_avg;
+        var mode = value.mode;
+
+        get_directions(starting, ending, mode, function(data) {
+          console.log(data);
+
+          var time = data['routes'][0]['legs'][0]['duration']['value'];
+          console.log(time + ' seconds');
+
+          total_duration += time;
+
+          //locations[key]['']
+          durations.push(Math.round(time/60));
+        });
+
+        pausecomp(1000); // Don't overload google's servers
       });
-      var lat_avg = lat_sum/$('input.addr-input').length;
-      var lng_avg = lng_sum/$('input.addr-input').length;
-      console.log(lat_avg + ',' + lng_avg);
 
-      var mapOptions = {
-        center: new google.maps.LatLng(lat_avg, lng_avg),
-        zoom: 13,
-        mapTypeId: google.maps.MapTypeId.ROADMAP
-      };
+      data_matrix['total_duration'][curr_x][curr_y] = total_duration;
 
-      map = new google.maps.Map(document.getElementById("map_canvas"), mapOptions);
+      console.log(data_matrix);
 
-      iterate();
+      var row = rowTemplate({iteration: iteration, durations: durations, total_duration: Math.round(total_duration/60)});
+      $('#results-table tr:last').after(row);
+
+      iteration += 1;
+    }
+
+    $(document).ready(function(){
+      $('.travel-input button').click(function(){
+        var travel = $(this).attr('data-val');
+        $(this).parents('.controls').find('.addr-input').attr('data-travel', travel);
+      });
+
+      $('#add-address').click(function(){
+        console.log('Add address!');
+        $('.control-group.addr-input:last').after(addressInputTemplate());
+      });
+
+      $('#next').click(function(){
+        iterate();
+      });
+
+      $('#go').click(function() {
+        console.log('Starting!');
+
+        console.log('Getting location lat/lng');
+        $('input.addr-input').each( function() {
+          var addr = $(this).val();
+          var mode = $(this).next().find('.active').data('val');
+          get_lat_lon( addr, function(data){
+            var location = data['results'][0]['geometry']['location'];
+            locations[addr] = {
+              lat: parseFloat(location['lat']),
+              lng: parseFloat(location['lng']),
+              mode: mode,
+              duration: create_matrix(data_dim)
+            };
+          })
+        });
+        num_locations = Object.keys(locations).length;
+
+        console.log('Locations:')
+        console.log(locations);
+
+        console.log('Initializing data');
+        init_data(data_dim);
+
+        // Set up table
+        console.log('Setting up table');
+        var header = tableHeaderTemplate({addrs: Object.keys(locations)});
+        $('#results-header').html(header);
+        $('#results').show();
+
+        console.log('Locations');
+        console.log(locations);
+
+        var lat_sum = lng_sum = 0;
+        $.map(locations, function(value,key){
+          lat_sum += value.lat;
+          lng_sum += value.lng;
+        });
+        var lat_avg = lat_sum/Object.keys(locations).length;
+        var lng_avg = lng_sum/Object.keys(locations).length;
+        console.log('Lat and Lng Avg: ' + lat_avg + ',' + lng_avg);
+
+        var mapOptions = {
+          center: new google.maps.LatLng(lat_avg, lng_avg),
+          zoom: 13,
+          mapTypeId: google.maps.MapTypeId.ROADMAP
+        };
+
+        map = new google.maps.Map(document.getElementById("map_canvas"), mapOptions);
+
+        iterate();
+        $('#next').show();
+      });
     });
-  });
   </script>
 </body>
 </html>
